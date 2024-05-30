@@ -13,7 +13,7 @@ variable "profile" {
   type        = string
 }
 
-variable "cidr-subnets-private"{
+variable "cidr-subnets-private" {
   description = "CIDR for Private Subnets"
   type        = string
 }
