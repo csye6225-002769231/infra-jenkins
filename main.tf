@@ -1,11 +1,31 @@
+variable "cidr-vpc" {
+  description = "CIDR for VPC"
+  type        = string
+}
+
+variable "cidr-subnets-public" {
+  description = "CIDR for Public Subnets"
+  type        = string
+}
+
+variable "profile" {
+  description = "profile"
+  type        = string
+}
+
+variable "cidr-subnets-private"{
+  description = "CIDR for Private Subnets"
+  type        = string
+}
+
 provider "aws" {
   region  = "us-east-1"
-  profile = "admin"
+  profile = var.profile
 }
 
 #Create a VPC
 resource "aws_vpc" "jenkins_vpc" {
-  cidr_block           = "10.0.0.0/16"
+  cidr_block           = var.cidr-vpc
   enable_dns_support   = true
   enable_dns_hostnames = true
   tags = {
@@ -16,14 +36,14 @@ resource "aws_vpc" "jenkins_vpc" {
 #Create subnets
 resource "aws_subnet" "public_subnet" {
   vpc_id                  = aws_vpc.jenkins_vpc.id
-  cidr_block              = "10.0.1.0/24"
+  cidr_block              = var.cidr-subnets-public
   map_public_ip_on_launch = true
   availability_zone       = "us-east-1a"
 }
 
 resource "aws_subnet" "private_subnet" {
   vpc_id            = aws_vpc.jenkins_vpc.id
-  cidr_block        = "10.0.2.0/24"
+  cidr_block        = var.cidr-subnets-private
   availability_zone = "us-east-1a"
 }
 
@@ -101,12 +121,6 @@ data "aws_ami" "jenkins_ami" {
   owners = ["self", "269002347067"] # Replace with your AWS account ID or the ID of the owner of the AMI
 }
 
-# Create a key pair
-resource "aws_key_pair" "jenkins_key_pair" {
-  key_name   = "jenkins-key-pair"
-  public_key = file("~/.ssh/id_rsa.pub") # Path to your public key file
-}
-
 # Launch an EC2 instance with the Jenkins AMI
 resource "aws_instance" "jenkins_instance" {
   ami                         = data.aws_ami.jenkins_ami.id
@@ -114,8 +128,7 @@ resource "aws_instance" "jenkins_instance" {
   subnet_id                   = aws_subnet.public_subnet.id
   vpc_security_group_ids      = [aws_security_group.security_group.id]
   associate_public_ip_address = true
-  #   key_name                    = aws_key_pair.jenkins_key_pair.key_name
-  key_name = "csye7125"
+  key_name                    = "csye7125"
 
   # User data script to set up Jenkins
   user_data = <<-EOF
