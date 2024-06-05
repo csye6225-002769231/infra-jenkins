@@ -1,21 +1,8 @@
 #!/bin/bash
 
-# Update and upgrade the system
-sudo apt update && sudo apt upgrade -y
-
-# Install Java
-sudo apt install openjdk-11-jdk -y
-
-# Add Jenkins repository and install Jenkins
-wget -q -O - https://pkg.jenkins.io/debian/jenkins.io.key | sudo apt-key add -
-sudo sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
+# Install Nginx
 sudo apt update
-sudo apt install jenkins -y
-
-# Start and enable Jenkins
-sudo systemctl start jenkins
-sudo systemctl enable jenkins
-
+sudo apt install nginx -y
 
 # Start and enable Nginx
 sudo systemctl start nginx
@@ -27,7 +14,7 @@ sudo ufw allow OpenSSH
 sudo ufw --force enable
 
 # Create Nginx server block for Jenkins
-cat <<EOF | sudo tee /etc/nginx/sites-available/jenkins
+cat <<EOL | sudo tee /etc/nginx/sites-available/jenkins
 server {
     listen 80;
     server_name jenkins.kshitijprabhu.me;
@@ -46,7 +33,7 @@ server {
         chunked_transfer_encoding on;
     }
 }
-EOF
+EOL
 
 # Enable the new Nginx configuration
 sudo ln -s /etc/nginx/sites-available/jenkins /etc/nginx/sites-enabled/
@@ -58,23 +45,58 @@ sudo nginx -t
 sudo systemctl reload nginx
 
 # Obtain an SSL certificate
+sudo apt-get install certbot python3-certbot-nginx -y
 sudo certbot --nginx -d jenkins.kshitijprabhu.me --non-interactive --agree-tos -m kshitij280700@gmail.com
 
 # Reload Nginx to apply the changes
 sudo systemctl reload nginx
 
-# Wait for Jenkins to initialize
-sleep 30
+echo "Jenkins setup is complete. Please open your web browser and navigate to https://jenkins.kshitijprabhu.me to complete the Jenkins setup wizard."
 
-# Unlock Jenkins and set the initial password
-INITIAL_ADMIN_PASSWORD=$(sudo cat /var/lib/jenkins/secrets/initialAdminPassword)
-JENKINS_CLI_JAR=/tmp/jenkins-cli.jar
-
-# Download Jenkins CLI
-wget http://localhost:8080/jnlpJars/jenkins-cli.jar -O $JENKINS_CLI_JAR
-
-# Configure Jenkins user with CLI
-echo "jenkins.model.Jenkins.instance.securityRealm.createAccount('admin', 'admin')" | java -jar $JENKINS_CLI_JAR -s http://localhost:8080/ -auth admin:$INITIAL_ADMIN_PASSWORD groovy =
+# Wait for Jenkins to start up
+sleep 120
 
 # Output the initial Jenkins admin password
+echo "Initial Jenkins admin password:"
+sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+INITIAL_ADMIN_PASSWORD=$(sudo cat /var/lib/jenkins/secrets/initialAdminPassword)
+
+# Download Jenkins CLI
+wget http://localhost:8080/jnlpJars/jenkins-cli.jar -O /tmp/jenkins-cli.jar
+
+# Set up the new admin user with username 'admin' and password 'admin'
+echo "jenkins.model.Jenkins.instance.securityRealm.createAccount('admin', 'admin')" | java -jar /tmp/jenkins-cli.jar -s http://localhost:8080/ -auth admin:$INITIAL_ADMIN_PASSWORD groovy =
+
+java -jar /tmp/jenkins-cli.jar -s http://localhost:8080/ -auth admin:admin -http build job1
+
+# Define the script approval Groovy script
+SCRIPT_APPROVAL_GROOVY=$(cat <<'EOF'
+import jenkins.model.Jenkins
+import org.jenkinsci.plugins.scriptsecurity.scripts.ScriptApproval
+
+ScriptApproval sa = Jenkins.instance.getExtensionList('org.jenkinsci.plugins.scriptsecurity.scripts.ScriptApproval')[0]
+sa.pendingScripts.each {
+    println "Approving script: " + it.script
+    sa.approveScript(it.hash)
+}
+EOF
+)
+
+# Write the script approval Groovy script to a file
+echo "${SCRIPT_APPROVAL_GROOVY}" > approve_scripts.groovy
+
+# Add a delay to ensure Jenkins registers pending scripts
+sleep 30
+
+# Approve the pending scripts
+for i in {1..3}; do
+    java -jar /tmp/jenkins-cli.jar -s http://localhost:8080/ -auth admin:admin groovy = < approve_scripts.groovy
+    sleep 10
+done
+
+java -jar /tmp/jenkins-cli.jar -s http://localhost:8080/ -auth admin:admin -http build job1
+
+# Clean up
+rm approve_scripts.groovy
+
 echo "Initial Jenkins admin password is set to 'admin'. Please open your web browser and navigate to https://jenkins.kshitijprabhu.me to complete the Jenkins setup wizard."
